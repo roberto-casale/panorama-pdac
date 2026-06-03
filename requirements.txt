@@ -1,6 +1,7 @@
-# PANORAMA PDAC — dipendenze Python per il notebook di download (Python 3.12)
+# PANORAMA PDAC — dipendenze Python per il notebook di download
+# Richiede Python ESATTAMENTE 3.12.13 (fissato in .python-version; usa pyenv install 3.12.13).
 # Ricrea l'ambiente con:
-#   python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#   pyenv local 3.12.13 && python -m venv .venv && .venv/bin/pip install -r requirements.txt
 #
 # (Curato e cross-platform: solo cio' che serve a panorama_download.ipynb.
 #  Eventuali tool DICOM per altri dataset, es. pydicom/dcm2niix, non sono inclusi.)

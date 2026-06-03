@@ -16,7 +16,7 @@ segmentazioni. Pensato per essere eseguito in Cursor/VSCode (estensione Jupyter)
 |---|---|
 | `panorama_download.ipynb` | **Notebook principale** (apri questo e fai Run All) |
 | `build_notebook.py` | genera il notebook (opzionale) |
-| `requirements.txt` | dipendenze Python (Python 3.12) |
+| `requirements.txt` | dipendenze Python (richiede **Python 3.12.13**, fissato in `.python-version`) |
 | `.vscode/settings.json` | interprete = `./.venv` |
 | `HANDOFF.md` | documento di stato dettagliato del progetto |
 
@@ -36,13 +36,18 @@ Cartelle ignorate da git (vedi `.gitignore`): `.venv/`, `imagesTr/`, `labelsTr/`
 git clone https://github.com/roberto-casale/panorama-pdac.git
 cd panorama-pdac
 
-# 2) ambiente (Python 3.12)
-python3.12 -m venv .venv
+# 2) Python ESATTAMENTE 3.12.13 (consigliato pyenv; .python-version lo fissa)
+pyenv install 3.12.13      # se non gia' installato
+pyenv local  3.12.13       # usa 3.12.13 in questa cartella (legge .python-version)
+#   senza pyenv: assicurati che 'python3.12 --version' sia 3.12.13
+
+# 3) ambiente virtuale + dipendenze
+python -m venv .venv       # usa il 3.12.13 selezionato
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m ipykernel install --user --name panorama-pdac \
     --display-name "PANORAMA PDAC (.venv 3.12)"
 
-# 3) apri in Cursor, seleziona il kernel/interprete .venv, Run All
+# 4) apri in Cursor, seleziona il kernel/interprete .venv, Run All
 ```
 - I **dati** non sono nel repo: alla prima esecuzione il notebook li ri-scarica da Zenodo
   (lento), **oppure** copia le cartelle `imagesTr/ labelsTr/ cache/` dal vecchio computer

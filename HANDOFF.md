@@ -46,13 +46,16 @@ dataset_NIfTI_ERASME_health/  # DATASET SEPARATO (Erasme) — NON parte di PANOR
 **Per usarlo (in Cursor/VSCode):** apri la cartella, apri `panorama_download.ipynb`,
 seleziona il kernel **PANORAMA PDAC (.venv 3.12)** (o l'interprete `.venv`), poi **Run All**.
 
-**Per ricreare il venv da zero (es. su Linux):**
+**Per ricreare il venv da zero (es. su Linux) — Python ESATTAMENTE 3.12.13:**
 ```bash
-python3.12 -m venv .venv
+pyenv install 3.12.13      # se non gia' presente (oppure installa 3.12.13 da sorgente/deadsnakes)
+pyenv local  3.12.13       # in questa cartella; legge/crea .python-version
+python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m ipykernel install --user --name panorama-pdac \
     --display-name "PANORAMA PDAC (.venv 3.12)"
 ```
+> La versione di Python è fissata a **3.12.13** in `.python-version` (riproducibilità).
 > Il venv NON è portabile tra macOS e Linux: va sempre ricreato (i dati e il notebook sì).
 
 ---
