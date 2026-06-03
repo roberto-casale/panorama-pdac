@@ -1,0 +1,19 @@
+# === Ambiente Python (NON portabile tra OS: ricrearlo da requirements.txt) ===
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# === Dati PANORAMA (grandi + licenza CC BY-NC: NON pubblicare) ===
+imagesTr/
+labelsTr/
+cache/
+*.xlsx
+
+# === Dataset Erasme (separati, non parte di questo progetto) ===
+dataset_NIfTI_ERASME_PDAC/
+dataset_NIfTI_ERASME_health/
+
+# === Sistema ===
+.DS_Store
+._*
