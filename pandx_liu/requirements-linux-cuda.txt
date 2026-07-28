@@ -1,0 +1,42 @@
+# Ambiente per Linux con GPU NVIDIA — è quello da usare per i lotti veri
+#
+# PyTorch va installato PRIMA e a parte, scegliendo la build CUDA giusta:
+#
+#   pip install "torch==2.5.1" --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements-linux-cuda.txt
+#
+# ############################################################################
+# ATTENZIONE — LA VERSIONE DI TORCH VA FISSATA A < 2.6
+#
+# Dalla 2.6 `torch.load` usa weights_only=True come default, e i checkpoint del
+# baseline PANORAMA (che contengono oggetti numpy) vengono RIFIUTATI:
+#     UnpicklingError: Weights only load failed ...
+#         Unsupported class numpy.core.multiarray.scalar
+# nnunetv2 2.5.1 chiama `torch.load` senza `weights_only=False`, quindi non c'è
+# modo di aggirarlo se non restando sotto la 2.6.
+#
+# Se scrivi solo `pip install torch` gli indici CUDA danno versioni troppo
+# recenti (cu124 -> 2.6.0, cu118 -> 2.7.1): NON funzionerebbero.
+# Se la tua GPU richiede per forza torch >= 2.6, devi aggiornare anche nnunetv2.
+#
+# Su Linux NON serve pinnare numpy: con torch 2.5.1 va bene sia 1.x sia 2.x.
+# ############################################################################
+
+nnunetv2==2.5.1
+
+# Versioni fissate perche' determinano direttamente i risultati:
+# report-guided-annotation stabilisce come si estraggono le lesioni candidate
+# (e quindi il punteggio del paziente), picai_eval come si calcolano AP e AUROC.
+report-guided-annotation==0.3.4
+picai_eval==1.4.13
+
+SimpleITK
+nibabel
+pandas
+openpyxl
+scikit-learn
+matplotlib
+ipykernel
+
+# serve a scaricare i pesi dalla cartella Google Drive di Liu
+gdown

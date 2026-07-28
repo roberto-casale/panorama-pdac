@@ -11,16 +11,18 @@ segmentazioni. Pensato per essere eseguito in Cursor/VSCode (estensione Jupyter)
 
 ---
 
-Il repo contiene **due parti indipendenti**, ognuna con il proprio ambiente Python:
+Il repo contiene **tre parti indipendenti**:
 
 | Parte | Cartella | A cosa serve |
 |---|---|---|
 | **1. Download del dataset** | radice del repo | scaricare a percentuale i casi PANORAMA da Zenodo e generare il report Excel |
-| **2. Inferenza PDAC** | [`baseline_pdac/`](baseline_pdac/) | far girare l'algoritmo baseline PANORAMA su nuovi esami TC e calcolare AUROC / AP |
+| **2. Inferenza — baseline** | [`baseline_pdac/`](baseline_pdac/) | algoritmo **baseline** PANORAMA (Radboud UMC) su nuovi esami TC, con AUROC / AP |
+| **3. Inferenza — PanDx** | [`pandx_liu/`](pandx_liu/) | algoritmo **vincitore** della challenge (H. Liu, Siemens), stesse metriche |
 
-> ⚠️ **Le due parti usano ambienti Python DIVERSI e incompatibili tra loro**
-> (`.venv` per il download, `.venv-nnunet` per l'inferenza): nnU-Net richiede `numpy<2`
-> su macOS Intel, il notebook di download usa numpy 2.x. Non mescolarli.
+> ⚠️ **Due ambienti Python DIVERSI e incompatibili tra loro:**
+> `.venv` per il download (numpy 2.x), `.venv-nnunet` per l'inferenza (nnU-Net richiede
+> `numpy<2` su macOS Intel). Non mescolarli.
+> Le parti **2 e 3 condividono lo stesso** `.venv-nnunet`: non serve un terzo ambiente.
 
 ### Parte 1 — download del dataset (radice)
 | File | Cosa è |
@@ -31,7 +33,7 @@ Il repo contiene **due parti indipendenti**, ognuna con il proprio ambiente Pyth
 | `.vscode/settings.json` | interprete = `./.venv` |
 | `HANDOFF.md` | documento di stato dettagliato del progetto |
 
-### Parte 2 — inferenza PDAC ([`baseline_pdac/`](baseline_pdac/))
+### Parte 2 — inferenza con il baseline ([`baseline_pdac/`](baseline_pdac/))
 | File | Cosa è |
 |---|---|
 | `baseline_pdac/README.md` | **panoramica della cartella — parti da qui** |
@@ -39,9 +41,21 @@ Il repo contiene **due parti indipendenti**, ognuna con il proprio ambiente Pyth
 | `baseline_pdac/panorama_baseline_inference.ipynb` | notebook di inferenza |
 | `baseline_pdac/requirements-*.txt` | dipendenze, una per piattaforma |
 
+### Parte 3 — inferenza con PanDx, il modello vincitore ([`pandx_liu/`](pandx_liu/))
+| File | Cosa è |
+|---|---|
+| `pandx_liu/README.md` | **panoramica della cartella — parti da qui** |
+| `pandx_liu/SETUP_GUIDE.md` | installazione passo passo |
+| `pandx_liu/pandx_inference.ipynb` | notebook di inferenza |
+| `pandx_liu/requirements-*.txt` | dipendenze, una per piattaforma |
+
+> I due algoritmi condividono lo **stadio 1** (localizzazione del pancreas): PanDx riusa
+> quello del baseline senza modifiche. Differiscono nello stadio 2 e nel post-processing.
+
 Cartelle ignorate da git (vedi `.gitignore`), da ricreare/riscaricare in locale:
 `.venv/`, `.venv-nnunet/`, `imagesTr/`, `labelsTr/`, `cache/`, `*.xlsx`, `articles/`,
-`baseline_pdac/models/` (pesi da Zenodo, ~1,8 GB) e i dataset Erasme separati.
+`baseline_pdac/models/` (~1,8 GB da Zenodo), `pandx_liu/models/` (~1,4 GB da Google Drive)
+e i dataset Erasme separati.
 
 ---
 

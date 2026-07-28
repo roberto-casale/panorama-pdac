@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Genera `panorama_baseline_inference.ipynb`.
+"""Genera `pandx_inference.ipynb`.
 
-Il notebook esegue l'algoritmo baseline della PANORAMA challenge (Radboud UMC)
-su nuovi esami TC e produce, per ogni caso, un punteggio 0-1 di sospetto PDAC.
-Riproduce fedelmente la pipeline di `src/process.py` + `src/data_utils.py`
-del repo DIAGNijmegen/PANORAMA_baseline, usando l'API Python di nnU-Net
-invece della riga di comando (stessi risultati, nessun sottoprocesso).
+Il notebook esegue PanDx (H. Liu, team DTI — Siemens Healthineers), l'algoritmo
+che ha VINTO la PANORAMA challenge, su nuovi esami TC e produce per ogni caso un
+punteggio 0-1 di sospetto PDAC.
+
+Riproduce fedelmente la pipeline di `main.py` del repo han-liu/PDAC_Detection,
+usando l'API Python di nnU-Net invece della riga di comando (stessi risultati,
+nessun sottoprocesso e nessun rischio di deadlock del multiprocessing su macOS).
 """
 import json
 
@@ -37,8 +39,9 @@ def code(text):
 
 # ---------------------------------------------------------------- intro
 md(r"""
-# PANORAMA baseline — inferenza PDAC su nuovi esami TC
+# PanDx (H. Liu) — inferenza PDAC su nuovi esami TC
 
+**PanDx** è l'algoritmo che ha **vinto** la PANORAMA challenge (team DTI, Siemens Healthineers).
 Questo notebook prende esami TC addominali **con contrasto, fase porto-venosa** (`.nii.gz`)
 e per ognuno restituisce un **punteggio 0–1**: quanto è probabile che il paziente abbia un
 adenocarcinoma duttale del pancreas (PDAC).
@@ -50,21 +53,37 @@ manuali del tumore, anche **AP** (localizzazione della lesione).
 
 | | Cosa fa | Rete |
 |---|---|---|
-| **Stadio 1** | trova il pancreas su una versione a bassa risoluzione | nnU-Net, 2 classi |
+| **Stadio 1** | trova il pancreas su una versione a bassa risoluzione | nnU-Net del **baseline**, riusato senza modifiche |
 | *in mezzo* | ritaglia una scatola attorno al pancreas (margine 100×50×15 mm) | pura geometria |
-| **Stadio 2** | dentro la scatola segmenta 6 strutture, tumore incluso | nnU-Net, 7 classi (con lo sfondo) |
-| *alla fine* | dalla mappa del tumore estrae le lesioni candidate; il **massimo** è il punteggio del paziente | post-processing |
+| **Stadio 2** | dentro la scatola cerca il tumore | rete **di Liu** (`Dataset107`), addestrata da lui |
+| *alla fine* | estrae le lesioni candidate con soglia adattiva; il **massimo** è il punteggio del paziente | post-processing |
+
+## In cosa differisce dal baseline
+
+Liu parte dallo stesso schema a due stadi, ma cambia tre cose. Sono poche e mirate,
+ed è da lì che viene il suo vantaggio (AP 0.720 contro 0.634 sul test set):
+
+| | Baseline | **PanDx (Liu)** |
+|---|---|---|
+| Stadio 1 | proprio | **lo stesso**, riusato tale e quale |
+| Stadio 2 | U-Net standard, `Dataset104` | **ResU-Net**, `Dataset107`, addestrata da lui |
+| Estrazione lesioni | soglia di default | **soglia adattiva**: τ = picco / 15 |
+| Filtro anti-falsi-positivi | azzera fuori dal pancreas dilatato | **nessun filtro** |
 
 > **Importante:** i modelli ricevono **solo l'immagine TC**. Le segmentazioni manuali,
 > se le hai, servono unicamente a *valutare* i risultati — non entrano mai nel modello.
+> Nemmeno età e sesso vengono usati.
 
 ## Fonti (codice riprodotto fedelmente)
 
-- Codice: <https://github.com/DIAGNijmegen/PANORAMA_baseline> (Apache-2.0)
-- Pesi: <https://zenodo.org/records/11160381> (CC BY-NC 4.0 — **solo uso non commerciale**)
-- Articolo: Alves N, Schuurmans M, Rutkowski D, et al. *Lancet Oncol* 2026;27(1):116–124
+- Codice: <https://github.com/han-liu/PDAC_Detection>
+- Pesi: cartella Google Drive indicata nel loro README (vedi `SETUP_GUIDE.md`)
+- Articolo: Liu H, Gao R, Krieg E, Grbic S. *PanDx*, MICCAI Workshop on Applications of
+  Medical AI, 2025 ([arXiv 2503.10068](https://arxiv.org/abs/2503.10068))
+- Challenge: Alves N, et al. *Lancet Oncol* 2026;27(1):116–124
 
 ⚠️ **Strumento di ricerca**, non un dispositivo medico approvato. Non usare per decisioni cliniche.
+I pesi del baseline (usati nello stadio 1) sono **CC BY-NC 4.0**: solo uso non commerciale.
 """)
 
 # ---------------------------------------------------------------- 1. config
@@ -94,23 +113,23 @@ from pathlib import Path
 # ============================================================================
 #  DOVE SIAMO  —  rilevato da solo, non serve toccarlo
 # ============================================================================
-# BASE_DIR = la cartella che contiene questo notebook (`baseline_pdac`).
+# BASE_DIR = la cartella che contiene questo notebook (`pandx_liu`).
 # Usiamo percorsi RELATIVI, così l'intera cartella si può copiare su un altro
 # computer (es. il Linux con GPU) e funziona senza modifiche.
 #
 # Il riconoscimento si basa su un file che c'è SEMPRE (questo notebook), non sulla
 # cartella `models`: quest'ultima non esiste prima di aver scaricato i pesi, e usarla
 # come riferimento renderebbe impossibile il primo avvio.
-_MARKER = "panorama_baseline_inference.ipynb"
+_MARKER = "pandx_inference.ipynb"
 BASE_DIR = Path.cwd()
 if not (BASE_DIR / _MARKER).exists():
-    if (BASE_DIR / "baseline_pdac" / _MARKER).exists():
-        BASE_DIR = BASE_DIR / "baseline_pdac"      # lanciato dalla cartella superiore
+    if (BASE_DIR / "pandx_liu" / _MARKER).exists():
+        BASE_DIR = BASE_DIR / "pandx_liu"          # lanciato dalla cartella superiore
     else:
         print(f"ATTENZIONE: non trovo '{_MARKER}' in {BASE_DIR}.\n"
               f"            Se i percorsi non funzionano, imposta BASE_DIR a mano qui sotto.")
 
-MODELS_DIR = BASE_DIR / "models"                 # pesi scaricati da Zenodo
+MODELS_DIR = BASE_DIR / "models"                 # pesi scaricati dal Drive di Liu
 OUTPUT_DIR = BASE_DIR / "risultati"              # punteggi e mappe di detection
 
 # ============================================================================
@@ -132,9 +151,15 @@ DEVICE = "auto"
 # la pipeline funzioni. Per i risultati veri lascia False.
 FAST_MODE = False
 
-# Fedeltà massima (impostazioni ufficiali del baseline): 5 fold + TTA attiva
+# Fedeltà massima (impostazioni ufficiali di PanDx): 5 fold + TTA attiva
 FOLDS    = (0,) if FAST_MODE else (0, 1, 2, 3, 4)
 USE_TTA  = not FAST_MODE
+
+# Soglia adattiva per estrarre le lesioni: tau = picco / INV_ALPHA.
+# 15 è il valore scelto da Liu dopo ricerca a griglia (nel suo codice: --inv_alpha).
+# È una delle differenze chiave rispetto al baseline: NON modificarlo se vuoi
+# risultati confrontabili con quelli pubblicati.
+INV_ALPHA = 15
 
 # Salva le mappe di detection 3D (servono per calcolare l'AP)
 SAVE_DETECTION_MAPS = True
@@ -233,10 +258,10 @@ else:
 try:
     import nnunetv2, os as _os
     _tdir = _os.path.join(nnunetv2.__path__[0], "training", "nnUNetTrainer")
-    if not _os.path.exists(_os.path.join(_tdir, "customTrainerCEcheckpoints.py")):
-        problemi.append("Manca 'customTrainerCEcheckpoints.py' dentro nnunetv2 (vedi SETUP_GUIDE.md).")
+    if not _os.path.exists(_os.path.join(_tdir, "variants", "loss", "liuPanDxTrainers.py")):
+        problemi.append("Manca 'liuPanDxTrainers.py' dentro nnunetv2 (vedi SETUP_GUIDE.md).")
     else:
-        print("  Trainer personalizzato del baseline : ok")
+        print("  Trainer personalizzato di PanDx : ok")
 except Exception as e:
     problemi.append(f"Non riesco a controllare il trainer: {e}")
 
@@ -262,24 +287,33 @@ md(r"""
 ---
 ## 3 · I modelli ci sono?
 
-Controlla che i pesi scaricati da Zenodo siano al loro posto e completi.
+Controlla che i pesi scaricati dal Google Drive di Liu siano al loro posto e completi.
 Se mancano, la cella stampa il comando esatto per scaricarli.
 """)
 
 code(r'''
-M_STAGE1 = MODELS_DIR / "Dataset103_PANORAMA_baseline_Pancreas_Segmentation" / "nnUNetTrainer__nnUNetPlans__3d_fullres"
-M_STAGE2 = MODELS_DIR / "Dataset104_PANORAMA_baseline_PDAC_Detection" / "nnUNetTrainer_Loss_CE_checkpoints__nnUNetPlans__3d_fullres"
+# I pesi di Liu arrivano dalla sua cartella Google Drive e conservano la struttura
+# `workspace/nnUNet_results/...`. Se manca, cerchiamo anche senza quel prefisso.
+_ROOTS = [MODELS_DIR / "workspace" / "nnUNet_results", MODELS_DIR]
+_R = next((r for r in _ROOTS if (r / "Dataset107_PDAC_Detection").exists()), _ROOTS[0])
+
+M_STAGE1 = _R / "Dataset103_PANORAMA_baseline_Pancreas_Segmentation" / "nnUNetTrainer__nnUNetPlans__3d_fullres"
+M_STAGE2 = _R / "Dataset107_PDAC_Detection" / "nnUNetTrainerCELossLesionSplit__nnUNetPlans_v3__3d_fullres"
 CK_STAGE1 = "checkpoint_final.pth"
-CK_STAGE2 = "checkpoint_best_panorama.pth"
+CK_STAGE2 = "checkpoint_final.pth"
 
 ISTRUZIONI = f"""
-I pesi non ci sono. Scaricali (1,8 GB in totale) con:
+I pesi non ci sono. Scaricali (~1,4 GB) dalla cartella Google Drive di Liu:
 
-  cd {MODELS_DIR.parent}
-  mkdir -p {MODELS_DIR.name} && cd {MODELS_DIR.name}
-  curl -L -o D103.zip "https://zenodo.org/records/11160381/files/Dataset103_PANORAMA_baseline_Pancreas_Segmentation.zip?download=1"
-  curl -L -o D104.zip "https://zenodo.org/records/11160381/files/Dataset104_PANORAMA_baseline_PDAC_Detection.zip?download=1"
-  unzip -q D103.zip && unzip -q D104.zip
+  pip install gdown
+  python -c "import gdown; gdown.download_folder(
+      'https://drive.google.com/drive/folders/1RpbofQDrQNzwfYjFhQYRRWCN8HhIoZQP',
+      output='{MODELS_DIR}')"
+
+Se Google Drive rifiuta il download automatico (capita per limiti di traffico),
+scarica la cartella a mano dal browser e mettila in:
+  {MODELS_DIR}
+mantenendo la struttura `workspace/nnUNet_results/Dataset...`.
 """
 
 mancanti = []
@@ -310,19 +344,23 @@ md(r"""
 ---
 ## 4 · La pipeline
 
-Qui sotto c'è la traduzione fedele di `data_utils.py` e `process.py` del repo ufficiale.
+Qui sotto c'è la traduzione fedele di `main.py` del repo di Liu (han-liu/PDAC_Detection).
 Ogni funzione ha un commento che spiega **cosa fa e perché**.
 
-Le uniche differenze rispetto all'originale, entrambe senza effetto sui risultati:
+Le differenze rispetto all'originale, nessuna delle quali cambia i risultati:
 
-1. usiamo l'**API Python** di nnU-Net invece di lanciare `nnUNetv2_predict` come sottoprocesso;
-2. lavoriamo **in memoria** invece di scrivere file temporanei a ogni passaggio.
+1. usiamo l'**API Python** di nnU-Net invece di lanciare `nnUNetv2_predict` come
+   sottoprocesso (evita anche il blocco del multiprocessing su macOS);
+2. gli intermedi finiscono in una cartella **temporanea** che viene cancellata da sola,
+   invece che in `output_dir/itm`;
+3. usiamo `nnunetv2 2.5.1` da PyPI invece della copia inclusa nel repo di Liu. La sua
+   unica modifica che tocca i numeri (`value_scaling_factor=10`) coincide con il valore
+   di default della 2.5.1, quindi i risultati non cambiano.
 """)
 
 code(r'''
 import numpy as np
 import SimpleITK as sitk
-from scipy.ndimage import binary_dilation
 from report_guided_annotation import extract_lesion_candidates
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
@@ -330,11 +368,10 @@ from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
 # Valori ufficiali del baseline: NON modificarli se vuoi risultati confrontabili
 SPACING_STAGE1 = (4.5, 4.5, 9.0)   # risoluzione grossolana per lo stadio 1
 CROP_MARGINS   = [100, 50, 15]     # margine in MILLIMETRI su x, y, z (per lato)
-DILATION_KERNEL = np.ones((5, 5, 5), dtype=bool)
 
 
 def resample_img(itk_image, out_spacing, is_label=False):
-    """Ricampiona a una data risoluzione (identica a data_utils.resample_img)."""
+    """Ricampiona a una data risoluzione (identica a `resample_img` di main.py)."""
     original_spacing = itk_image.GetSpacing()
     original_size = itk_image.GetSize()
     out_size = [int(np.round(original_size[i] * (original_spacing[i] / out_spacing[i]))) for i in range(3)]
@@ -354,9 +391,15 @@ def crop_pancreas_roi(image, low_res_segmentation, margins=CROP_MARGINS):
 
     Prende il bounding box della maschera, lo allarga del margine (in mm, su
     ENTRAMBI i lati di ogni asse) e taglia l'immagine a piena risoluzione.
-    Identica a data_utils.CropPancreasROI.
+    Identica a `crop_roi` di main.py.
     """
     mask_np = sitk.GetArrayFromImage(low_res_segmentation)
+    # Liu tiene SOLO la classe 1 (pancreas) prima di calcolare il bounding box:
+    #     pancreas_mask_np[pancreas_mask_np != 1] = 0
+    # Con i pesi attuali dello stadio 1 (2 classi) non cambia nulla, ma se un giorno
+    # ci si mettesse un modello multi-classe la scatola si allargherebbe a vasi e dotti
+    # senza dare errore. Lo replichiamo per fedelta'.
+    mask_np = (mask_np == 1)
     if mask_np.max() == 0:
         raise RuntimeError("Lo stadio 1 non ha trovato il pancreas: impossibile ritagliare.")
 
@@ -384,26 +427,36 @@ def crop_pancreas_roi(image, low_res_segmentation, margins=CROP_MARGINS):
 
 
 def post_processing(seg_stage2, probs_stage2):
-    """Azzera la probabilità di tumore fuori dal pancreas (filtro anti-falsi-positivi).
+    """Prende la probabilità di tumore, senza alcun filtro.
 
-    Ricostruisce la maschera del pancreas unendo le classi 1 (tumore), 4 (parenchima)
-    e 5 (dotto), la dilata di un kernel 5x5x5 voxel e tiene la probabilità di tumore
-    solo lì dentro. Identica a data_utils.PostProcessing.
+    ATTENZIONE — qui PanDx differisce dal baseline:
+    il baseline azzera la probabilità fuori dal pancreas dilatato (filtro
+    anti-falsi-positivi), Liu NON lo fa. Tiene la mappa di probabilità così
+    com'è e lascia che sia la soglia adattiva a selezionare le lesioni.
+    Identica a `PostProcessing` di main.py (repo han-liu/PDAC_Detection).
     """
-    pancreas = np.isin(seg_stage2, [1, 4, 5])
-    dilated = binary_dilation(pancreas, structure=DILATION_KERNEL)
-    tumor_prob = probs_stage2[1].astype(np.float32)   # canale 1 = tumore
-    tumor_prob[~dilated] = 0
-    return tumor_prob
+    return probs_stage2[1].astype(np.float32)   # canale 1 = tumore
 
 
-def to_full_size(tumor_prob_cropped, coords, full_image):
+def to_full_size(tumor_prob_cropped, coords, full_image, inv_alpha=None):
     """Estrae le lesioni candidate e rimette la mappa nel volume originale.
 
+    ATTENZIONE — seconda differenza dal baseline: la SOGLIA ADATTIVA.
+    Il baseline usa la soglia di default della libreria; Liu passa
+    `dynamic_threshold_factor = 15`, cioè tau = (probabilità di picco) / 15.
+    Soglia bassa e proporzionale al picco: le lesioni si espandono di più.
+    È il parametro che lui ha ottimizzato con ricerca a griglia.
+
     Restituisce (mappa di detection a dimensione piena, punteggio, n. candidati).
-    Il punteggio è il MASSIMO della mappa. Identica a data_utils.GetFullSizDetectionMap.
+    Identica a `GetFullSizDetectionMap` di main.py.
     """
-    lesion_candidates, confidences, _ = extract_lesion_candidates(tumor_prob_cropped)
+    # letto qui e non come default della funzione: così se cambi INV_ALPHA al punto 1
+    # e rilanci, il nuovo valore viene davvero usato (un default sarebbe congelato
+    # al momento in cui la cella è stata eseguita la prima volta)
+    if inv_alpha is None:
+        inv_alpha = INV_ALPHA
+    lesion_candidates, confidences, _ = extract_lesion_candidates(
+        tumor_prob_cropped, dynamic_threshold_factor=inv_alpha)
     patient_score = float(np.max(lesion_candidates))
 
     # GetSize() e' (x, y, z), gli array numpy sono (z, y, x) -> invertiamo.
@@ -553,7 +606,7 @@ if not candidati:
 else:
     caso = candidati[0]
     print(f"Caso di prova : {caso.name}  ({caso.stat().st_size/1e6:.1f} MB)")
-    print("In corso... (su CPU può richiedere da 30 minuti a 2 ore)\n")
+    print("In corso... (su CPU può richiedere da 1 a 4 ore: la rete di Liu è grande)\n")
 
     r = elabora_caso(caso)
 
@@ -818,123 +871,38 @@ else:
 # ---------------------------------------------------------------- 8. benchmark
 md(r"""
 ---
-## 8 · Benchmark: il codice riproduce i risultati ufficiali? *(facoltativo)*
+## 8 · Perché qui NON c'è il benchmark out-of-fold
 
-Prima di fidarti dei punteggi sui tuoi dati, è ragionevole chiedersi:
-**questa pipeline si comporta come quella originale?**
+Nel notebook del baseline c'è una sezione che valuta il modello sui 2238 casi pubblici
+di PANORAMA in modo *onesto*, usando per ogni caso il modello della fold che non lo
+aveva visto in addestramento. **Per PanDx non è possibile**, ed è giusto spiegare perché.
 
-Si può verificare usando i **2238 casi pubblici** di PANORAMA (quelli che scarichi da
-Zenodo, non il test set segreto). C'è però una trappola:
+### Il motivo
 
-> Il baseline è stato **addestrato** su quei casi. Se ci fai girare il modello sopra
-> e basta, i punteggi sono **gonfiati** — il modello li ha già visti.
+Liu non ha usato la suddivisione ufficiale in fold. Ha costruito la propria, stratificata
+per dimensione della lesione, età e sesso — è uno dei suoi contributi ("data splitting
+strategy"). Quella suddivisione **non è stata pubblicata**: non è nel repo né nella
+cartella dei pesi.
 
-La soluzione è la valutazione **out-of-fold**, ed è possibile perché gli autori hanno
-pubblicato la suddivisione ufficiale in 5 fold:
+Conseguenza pratica:
 
-- ogni caso è stato usato per **addestrare** 4 fold e per **validare** 1 fold;
-- se per ogni caso usi **solo il modello della fold che NON l'ha visto**, ottieni una
-  predizione onesta;
-- l'AUROC che ne esce è confrontabile con quello pubblicato.
+- non sappiamo quali casi fossero in validazione per ciascuna delle sue 5 fold;
+- usare la suddivisione *del baseline* darebbe un risultato **sbagliato**, perché per
+  molti casi sceglieremmo un modello che quel caso lo aveva invece già visto;
+- far girare PanDx sui 2238 casi pubblici senza distinzione produce punteggi
+  **ottimisticamente gonfiati**, non confrontabili con nulla.
 
-⚠️ **Costo:** su GPU sono ore, su CPU **giorni**. Falla girare sulla macchina con GPU.
+### Cosa fare invece
+
+L'unica valutazione onesta di PanDx è su **dati esterni**, mai visti dal modello:
+cioè esattamente la coorte che metti al punto 1. È anche la domanda scientificamente
+più interessante — *questo modello, addestrato su dati olandesi, funziona sui miei
+pazienti?* — e la sezione 7 la risponde già.
+
+> Se in futuro Liu pubblicasse i suoi split, il benchmark out-of-fold diventerebbe
+> possibile: basterebbe copiare la sezione 8 dal notebook del baseline e sostituire
+> il file delle fold.
 """)
-
-code(r'''
-# ============================================================================
-#  Benchmark out-of-fold sui casi pubblici PANORAMA
-#  Attiva questa cella solo se hai i casi PANORAMA e (preferibilmente) una GPU.
-# ============================================================================
-ESEGUI_BENCHMARK = False          # <-- metti True per lanciarlo
-
-# i casi pubblici PANORAMA stanno nella cartella del progetto, un livello sopra
-PANORAMA_IMAGES   = BASE_DIR.parent / "imagesTr"                              # {study_id}_0000.nii.gz
-PANORAMA_CLINICAL = BASE_DIR.parent / "cache" / "clinical_information.xlsx"   # etichette vere
-BENCH_CSV = OUTPUT_DIR / "benchmark_out_of_fold.csv"
-
-if not ESEGUI_BENCHMARK:
-    print("Benchmark disattivato (ESEGUI_BENCHMARK = False).")
-else:
-    import json
-
-    # 1) suddivisione ufficiale in fold, dal repo del baseline.
-    #    Se e' gia' stata salvata in locale la usa, altrimenti la scarica.
-    #    (uso `requests` e non `urllib`: su alcuni Mac urllib fallisce con
-    #     "CERTIFICATE_VERIFY_FAILED" perche' non trova i certificati di sistema)
-    FOLDS_LOCAL = MODELS_DIR / "Dataset104_folds.json"
-    URL_FOLDS = ("https://raw.githubusercontent.com/DIAGNijmegen/PANORAMA_baseline/main/"
-                 "src/Dataset104_PANORAMA_baseline_PDAC_Detection_folds.json")
-    if FOLDS_LOCAL.exists():
-        folds_json = json.loads(FOLDS_LOCAL.read_text())
-        print(f"Suddivisione in fold letta da: {FOLDS_LOCAL}")
-    else:
-        try:
-            import requests
-            folds_json = requests.get(URL_FOLDS, timeout=60).json()
-            FOLDS_LOCAL.write_text(json.dumps(folds_json))   # salva per la prossima volta
-        except Exception as e:
-            raise SystemExit(
-                f"Non riesco a scaricare la suddivisione in fold ({type(e).__name__}).\n"
-                f"Scaricala a mano e rilancia:\n"
-                f"  curl -L -o '{FOLDS_LOCAL}' '{URL_FOLDS}'")
-
-    # Il file ha questa forma:
-    #   {"Fold 0 validation": ["101990_00001", ...], "Fold 1 validation": [...], ...}
-    # cioe' per ogni fold l'elenco dei casi usati per VALIDARE (= non visti in addestramento).
-    import re
-    caso2fold = {}
-    for k, casi in folds_json.items():
-        fold_idx = int(re.search(r"\d+", k).group())
-        for c in casi:
-            caso2fold[c] = fold_idx
-    print(f"Suddivisione ufficiale caricata: {len(caso2fold)} casi mappati su {len(folds_json)} fold")
-
-    # 2) etichette vere dal file clinico
-    clin = pd.read_excel(PANORAMA_CLINICAL)
-    etichetta_vera = {r.PANORAMA_study_id: (1 if r.label == "PDAC" else 0) for r in clin.itertuples()}
-
-    # 3) casi disponibili in locale
-    disponibili = []
-    for p in sorted(Path(PANORAMA_IMAGES).glob("*_0000.nii.gz")):
-        sid = p.name.replace("_0000.nii.gz", "")
-        if sid in caso2fold and sid in etichetta_vera:
-            disponibili.append((sid, p, caso2fold[sid], etichetta_vera[sid]))
-    print(f"Casi utilizzabili: {len(disponibili)}")
-
-    # 4) raggruppa per fold: si carica un modello per fold, non uno per caso
-    da_fare = {}
-    for sid, p, f, y in disponibili:
-        da_fare.setdefault(f, []).append((sid, p, y))
-
-    righe = []
-    for f in sorted(da_fare):
-        print(f"\n--- fold {f}: {len(da_fare[f])} casi (modello che NON li ha visti) ---")
-        P1 = carica_predictor(M_STAGE1, CK_STAGE1, (f,), device, USE_TTA)
-        P2 = carica_predictor(M_STAGE2, CK_STAGE2, (f,), device, USE_TTA)
-        globals()["PRED1"], globals()["PRED2"] = P1, P2   # elabora_caso usa queste
-        for sid, p, y in da_fare[f]:
-            try:
-                r = elabora_caso(p)
-                righe.append({"case_id": sid, "fold": f, "etichetta": y,
-                              "score": r["score"], "secondi": round(r["secondi"], 1)})
-                print(f"  {sid}: {r['score']:.4f}  (vero: {'PDAC' if y else 'non-PDAC'})")
-            except Exception as e:
-                print(f"  {sid}: ERRORE {e}")
-            pd.DataFrame(righe).to_csv(BENCH_CSV, index=False)
-
-    b = pd.DataFrame(righe)
-    if len(b) and b["etichetta"].nunique() == 2:
-        auroc_oof = roc_auc_score(b["etichetta"], b["score"])
-        print("\n" + "=" * 62)
-        print(f"  AUROC out-of-fold = {auroc_oof:.3f}   su {len(b)} casi")
-        print("  (valore ONESTO: ogni caso valutato da un modello che non lo aveva visto)")
-        print("=" * 62)
-        print("  Riferimento pubblicato per il baseline: 0.909 (reader study) / 0.915 (test set)")
-        print("  ATTENZIONE nel confronto:")
-        print("   - qui gira UN SOLO fold per caso (è l'unico modo di restare out-of-fold),")
-        print("     mentre 0.909/0.915 vengono dall'ensemble a 5 fold: un valore piu' basso e' ATTESO;")
-        print("   - le coorti sono diverse (qui i casi pubblici, lì il test set segreto).")
-''')
 
 # ---------------------------------------------------------------- 9. note
 md(r"""
@@ -944,8 +912,12 @@ md(r"""
 ### Tempi
 | Hardware | Per caso | 100 casi |
 |---|---|---|
-| GPU NVIDIA (A6000, RTX 6000 Ada) | 1–3 min | 2–5 ore |
-| CPU (MacBook Intel) | 30 min – 2 h | **giorni** |
+| GPU NVIDIA (A6000, RTX 6000 Ada) | 3–8 min | 5–13 ore |
+| CPU (MacBook Intel) | 1–4 h | **settimane** |
+
+PanDx è **più lento del baseline**: la sua rete ha 113,9 milioni di parametri contro
+30,7 milioni, e la soglia bassa (τ = picco/15) fa crescere lesioni più grandi, quindi
+anche il post-processing costa di più.
 
 Sul Mac usa `FAST_MODE = True` per verificare che tutto funzioni, poi fai girare
 i lotti veri sulla macchina con GPU.
@@ -961,7 +933,7 @@ i lotti veri sulla macchina con GPU.
 | `Detected old nnU-Net plans format` | **normale, ignoralo.** I pesi sono del 2024: nnU-Net ricostruisce l'architettura dai plans e funziona correttamente (verificato). |
 | `perform_everything_on_device=True is only supported for cuda` | normale su CPU, si adatta da solo |
 | `nnUNet_raw is not defined` | normale: quelle variabili servono solo per l'addestramento, non per l'inferenza |
-| `Unable to locate trainer class` | manca `customTrainerCEcheckpoints.py` dentro `nnunetv2` → vedi `SETUP_GUIDE.md` |
+| `Unable to locate trainer class` | manca `liuPanDxTrainers.py` dentro `nnunetv2` → vedi `SETUP_GUIDE.md` |
 | `NumPy 1.x cannot be run in NumPy 2.x` | kernel sbagliato, oppure numpy aggiornato per errore: serve `numpy<2` con torch 2.2.2 |
 | `Lo stadio 1 non ha trovato il pancreas` | l'immagine non contiene l'addome, o non è una TC con contrasto |
 | Memoria esaurita | riduci a `FOLDS = (0,)`, oppure usa una macchina con più RAM |
@@ -978,7 +950,7 @@ i lotti veri sulla macchina con GPU.
 
 import os
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                   "panorama_baseline_inference.ipynb")
+                   "pandx_inference.ipynb")
 with open(OUT, "w", encoding="utf-8") as f:
     json.dump(nb, f, indent=1, ensure_ascii=False)
 print(f"Notebook creato: {OUT}")

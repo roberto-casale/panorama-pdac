@@ -8,6 +8,8 @@ __pycache__/
 # === Pesi dei modelli e risultati (grandi; si riscaricano da Zenodo) ===
 baseline_pdac/models/
 baseline_pdac/risultati/
+pandx_liu/models/
+pandx_liu/risultati/
 *.pth
 *.npz
 
