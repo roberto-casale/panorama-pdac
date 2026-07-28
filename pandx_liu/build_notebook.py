@@ -61,13 +61,14 @@ manuali del tumore, anche **AP** (localizzazione della lesione).
 ## In cosa differisce dal baseline
 
 Liu parte dallo stesso schema a due stadi, ma cambia tre cose. Sono poche e mirate,
-ed è da lì che viene il suo vantaggio (AP 0.720 contro 0.634 sul test set):
+ed è da lì che viene il suo vantaggio (AP 0,720 contro 0,634 sulla coorte di test
+sequestrata di 1130 casi, figura S8 dell'appendice di Alves et al.):
 
 | | Baseline | **PanDx (Liu)** |
 |---|---|---|
 | Stadio 1 | proprio | **lo stesso**, riusato tale e quale |
 | Stadio 2 | U-Net standard, `Dataset104` | **ResU-Net**, `Dataset107`, addestrata da lui |
-| Estrazione lesioni | soglia di default | **soglia adattiva**: τ = picco / 15 |
+| Estrazione lesioni | stessa soglia adattiva col fattore di default: τ = picco / 2,5 | **fattore 15**: τ = picco / 15 |
 | Filtro anti-falsi-positivi | azzera fuori dal pancreas dilatato | **nessun filtro** |
 
 > **Importante:** i modelli ricevono **solo l'immagine TC**. Le segmentazioni manuali,
@@ -227,11 +228,6 @@ try:
 except ImportError:
     problemi.append("report-guided-annotation non installato.")
 
-try:
-    import openpyxl  # serve a pandas per leggere gli .xlsx (usato dal benchmark)
-except ImportError:
-    print("  openpyxl : assente (serve solo per il benchmark al punto 8)")
-
 # --- torch >= 2.6 non riesce a caricare questi checkpoint ---
 # dalla 2.6 `torch.load` usa weights_only=True di default e i checkpoint del
 # baseline (che contengono oggetti numpy) vengono rifiutati.
@@ -251,7 +247,7 @@ if device.type == "cuda":
     p = torch.cuda.get_device_properties(0)
     print(f"  GPU        : {p.name}  ({p.total_memory/1e9:.1f} GB)")
 else:
-    print("  ATTENZIONE : nessuna GPU -> inferenza su CPU, da 30 min a 2 h PER CASO.")
+    print("  ATTENZIONE : nessuna GPU -> inferenza su CPU, da 1 a 4 ORE per caso.")
     print("               Va bene per provare su pochi casi; per lotti grandi serve una GPU.")
 
 # --- il trainer personalizzato del baseline deve essere raggiungibile ---
@@ -303,7 +299,7 @@ CK_STAGE1 = "checkpoint_final.pth"
 CK_STAGE2 = "checkpoint_final.pth"
 
 ISTRUZIONI = f"""
-I pesi non ci sono. Scaricali (~1,4 GB) dalla cartella Google Drive di Liu:
+I pesi non ci sono. Scaricali (~5,1 GB) dalla cartella Google Drive di Liu:
 
   pip install gdown
   python -c "import gdown; gdown.download_folder(
@@ -353,9 +349,10 @@ Le differenze rispetto all'originale, nessuna delle quali cambia i risultati:
    sottoprocesso (evita anche il blocco del multiprocessing su macOS);
 2. gli intermedi finiscono in una cartella **temporanea** che viene cancellata da sola,
    invece che in `output_dir/itm`;
-3. usiamo `nnunetv2 2.5.1` da PyPI invece della copia inclusa nel repo di Liu. La sua
-   unica modifica che tocca i numeri (`value_scaling_factor=10`) coincide con il valore
-   di default della 2.5.1, quindi i risultati non cambiano.
+3. usiamo `nnunetv2 2.5.1` da PyPI invece della copia inclusa nel repo di Liu. Quella
+   copia calcola in modo diverso la **gaussiana** con cui si fondono le patch, e la
+   differenza NON è trascurabile: per questo il notebook la sostituisce con la versione
+   di Liu (vedi il commento nella cella che carica i modelli).
 """)
 
 code(r'''
@@ -480,6 +477,48 @@ I modelli si caricano **una volta sola** e restano in memoria per tutti i casi
 """)
 
 code(r'''
+# ============================================================================
+#  FEDELTA' A PanDx: la gaussiana con cui si fondono le patch
+# ============================================================================
+# nnU-Net predice a finestre sovrapposte e le fonde pesandole con una gaussiana.
+# Liu usa nnU-Net 2.5, dove quella gaussiana viene convertita a float16 PRIMA di
+# essere normalizzata; dalla 2.5.1 (quella che installiamo) la normalizzazione
+# avviene in float64 e la conversione arriva dopo.
+#
+# Non è un dettaglio da nulla: in float16 il picco della gaussiana cade nei numeri
+# subnormali, quindi nella versione di Liu circa il 70% di ogni patch finisce
+# schiacciato sullo stesso peso minimo. I pesi di fusione risultano diversi e
+# di conseguenza lo sono anche i punteggi finali.
+#
+# Per riprodurre PanDx replichiamo QUI la sua versione. La sostituzione vale solo
+# dentro questo notebook: non modifica i file dell'ambiente, quindi il notebook
+# del baseline continua a usare la versione corretta per lui.
+from functools import lru_cache
+from scipy.ndimage import gaussian_filter
+import nnunetv2.inference.sliding_window_prediction as _swp
+import nnunetv2.inference.predict_from_raw_data as _pfrd
+
+
+@lru_cache(maxsize=2)
+def _compute_gaussian_liu(tile_size, sigma_scale=1. / 8, value_scaling_factor=1,
+                          dtype=torch.float16, device=torch.device('cuda', 0)):
+    """Identica a `compute_gaussian` del nnU-Net incluso nel repo di Liu."""
+    tmp = np.zeros(tile_size)
+    tmp[tuple(i // 2 for i in tile_size)] = 1
+    g = gaussian_filter(tmp, [i * sigma_scale for i in tile_size], 0, mode='constant', cval=0)
+    g = torch.from_numpy(g).type(dtype).to(device)          # <-- conversione PRIMA
+    g = (g / torch.max(g) * value_scaling_factor).type(dtype)
+    g[g == 0] = torch.min(g[g != 0])
+    return g
+
+
+# va sostituita in DUE punti: `predict_from_raw_data` importa il nome direttamente,
+# quindi rimpiazzare solo il modulo di origine non basterebbe
+_swp.compute_gaussian = _compute_gaussian_liu
+_pfrd.compute_gaussian = _compute_gaussian_liu
+print("Gaussiana di fusione: sostituita con quella di Liu (nnU-Net 2.5).")
+
+
 def carica_predictor(model_folder, checkpoint, folds, device, use_tta):
     p = nnUNetPredictor(
         tile_step_size=0.5,          # sovrapposizione della finestra scorrevole (default ufficiale)
@@ -664,6 +703,7 @@ if doppioni:
 # keep_default_na=False: senza, la colonna "errore" vuota diventa NaN e i casi
 #            riusciti sparirebbero silenziosamente dalle metriche.
 fatti = {}
+_chiavi_attuali = {k for k, *_ in lavoro}   # solo i casi di QUESTA coorte
 if RESUME and CSV_PATH.exists():
     prec = pd.read_csv(CSV_PATH, dtype={"case_id": str, "chiave": str, "errore": str},
                        keep_default_na=False)
@@ -676,7 +716,10 @@ if RESUME and CSV_PATH.exists():
     for _, r in prec.iterrows():
         d = r.to_dict()                      # dict, non Series (altrimenti pandas va in errore)
         k = d.get("chiave") or f"{d['gruppo']}/{d['case_id']}"
-        if not d.get("errore"):              # i casi ANDATI IN ERRORE vengono ritentati
+        # si considera completato solo se ha davvero un punteggio: una riga
+        # troncata da un'interruzione ha "errore" vuoto ma punteggio mancante,
+        # e verrebbe altrimenti data per fatta e poi scartata dalle metriche
+        if k in _chiavi_attuali and not d.get("errore") and pd.notna(d.get("score")):
             fatti[k] = d
     n_err_prec = len(prec) - len(fatti)
     print(f"Riprendo: {len(fatti)} casi già completati" +
@@ -745,8 +788,13 @@ d = df[df["errore"].fillna("").astype(str).str.len() == 0].dropna(subset=["score
 y = d["etichetta"].astype(int).values
 s = d["score"].values
 
+_esclusi = len(df) - len(d)
+if _esclusi:
+    print(f"ATTENZIONE: {_esclusi} casi esclusi (errore o punteggio mancante).\n")
+
 if len(np.unique(y)) < 2:
     print("Servono entrambi i gruppi (PDAC e controlli) per calcolare l'AUROC.")
+    print("(se ti aspettavi entrambi, guarda la colonna 'errore' del CSV)")
 else:
     auroc = roc_auc_score(y, s)
 
@@ -763,10 +811,6 @@ else:
     print(f"  AUROC = {auroc:.3f}   (IC 95%: {lo:.3f} – {hi:.3f})")
     print("=" * 62)
     print(f"  casi: {int((y==1).sum())} PDAC / {int((y==0).sum())} controlli")
-    _esclusi = len(df) - len(d)
-    if _esclusi:
-        print(f"  ATTENZIONE: {_esclusi} casi esclusi (errore o punteggio mancante), "
-              f"NON conteggiati sopra")
     print(f"  punteggio mediano  PDAC : {np.median(s[y==1]):.3f}")
     print(f"  punteggio mediano  sani : {np.median(s[y==0]):.3f}")
 
@@ -941,11 +985,15 @@ i lotti veri sulla macchina con GPU.
 ### Onestà sui risultati
 - Se valuti su casi **già usati per addestrare** il modello (cioè i 2238 pubblici di
   PANORAMA), i punteggi sono **ottimisticamente distorti**. Per una valutazione onesta
-  servono casi mai visti dal modello, oppure la valutazione *out-of-fold*.
+  servono casi mai visti dal modello. Per PanDx la valutazione *out-of-fold*
+  NON è praticabile: vedi il punto 8.
 - Con poche decine di casi gli intervalli di confidenza sono larghi: dichiarali sempre.
 - Confrontare "PDAC vs sani" è **più facile** di "PDAC vs altre patologie pancreatiche",
   che è il problema clinico vero. L'AUROC che ottieni non è direttamente confrontabile
-  con lo 0.92 dell'articolo, dove il 41% dei controlli aveva altre patologie del pancreas.
+  né con lo **0,916** di PanDx nella figura S8 dell'appendice di Alves et al. (coorte
+  sequestrata, 1130 casi) né con lo **0,9263** dell'articolo PanDx (test set della
+  challenge, 957 casi). In quelle coorti il 41% dei controlli aveva altre patologie
+  pancreatiche: un confronto con controlli sani non regge.
 """)
 
 import os

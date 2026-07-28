@@ -216,7 +216,26 @@ per i numeri veri rimetti `FAST_MODE = False`.
 
 ---
 
-## 8 · Cosa aspettarsi (e come non ingannarsi)
+## 8 · Un dettaglio tecnico che il notebook gestisce da solo
+
+Liu usa una copia di nnU-Net (2.5) inclusa nel suo repo, mentre qui installiamo la
+**2.5.1** da PyPI. Le due calcolano in modo diverso la **gaussiana** con cui si fondono
+le finestre sovrapposte durante l'inferenza: la sua converte a `float16` *prima* di
+normalizzare, la 2.5.1 normalizza in `float64` e converte *dopo*.
+
+Non è un'inezia: in `float16` il picco della gaussiana finisce nei numeri subnormali,
+così nella versione di Liu circa il 70% di ogni finestra viene schiacciato sullo stesso
+peso minimo (296 livelli distinti contro 18.566). Pesi di fusione diversi ⇒ punteggi
+diversi.
+
+**Il notebook lo risolve da solo**: sostituisce quella funzione con la versione di Liu
+al momento di caricare i modelli. La sostituzione vive solo dentro il notebook, non
+modifica l'ambiente, quindi il notebook del baseline continua a usare la sua versione
+corretta. Non devi fare nulla.
+
+---
+
+## 9 · Cosa aspettarsi (e come non ingannarsi)
 
 - **Tempi:** GPU 3–8 min per caso; CPU 1–4 h per caso (più lento del baseline).
 - **Non esiste un benchmark out-of-fold per PanDx**: Liu non ha pubblicato la sua
@@ -238,7 +257,7 @@ per i numeri veri rimetti `FAST_MODE = False`.
 
 ---
 
-## 9 · Riferimenti
+## 10 · Riferimenti
 
 - Codice PanDx: <https://github.com/han-liu/PDAC_Detection>
   (esiste anche <https://github.com/han-liu/PanDx>, stesso contenuto)

@@ -44,11 +44,12 @@ PanDx usa lo **stesso schema a due stadi** del baseline, ma cambia tre cose mira
 |---|---|---|
 | Stadio 1 (trova il pancreas) | proprio | **lo stesso**, riusato senza modifiche |
 | Stadio 2 (trova il tumore) | U-Net standard, `Dataset104` | **ResU-Net**, `Dataset107` |
-| Estrazione delle lesioni | soglia di default | **soglia adattiva**: τ = picco / 15 |
+| Estrazione delle lesioni | soglia adattiva, fattore di default: τ = picco / 2,5 | **fattore 15**: τ = picco / 15 |
 | Filtro anti-falsi-positivi | azzera fuori dal pancreas dilatato | **nessun filtro** |
 
 Nelle sue parole: riusa i modelli del baseline «*eliminating the need for retraining*»
-e sostituisce la U-Net con una ResU-Net «*to better fit the detection task*».
+sostituisce la loss Dice+CE con la sola CE «*to better fit the detection task*»
+e la U-Net con una ResU-Net.
 
 ---
 

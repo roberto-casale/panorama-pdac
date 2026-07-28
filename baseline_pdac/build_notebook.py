@@ -611,6 +611,7 @@ if doppioni:
 # keep_default_na=False: senza, la colonna "errore" vuota diventa NaN e i casi
 #            riusciti sparirebbero silenziosamente dalle metriche.
 fatti = {}
+_chiavi_attuali = {k for k, *_ in lavoro}   # solo i casi di QUESTA coorte
 if RESUME and CSV_PATH.exists():
     prec = pd.read_csv(CSV_PATH, dtype={"case_id": str, "chiave": str, "errore": str},
                        keep_default_na=False)
@@ -623,7 +624,10 @@ if RESUME and CSV_PATH.exists():
     for _, r in prec.iterrows():
         d = r.to_dict()                      # dict, non Series (altrimenti pandas va in errore)
         k = d.get("chiave") or f"{d['gruppo']}/{d['case_id']}"
-        if not d.get("errore"):              # i casi ANDATI IN ERRORE vengono ritentati
+        # si considera completato solo se ha davvero un punteggio: una riga
+        # troncata da un'interruzione ha "errore" vuoto ma punteggio mancante,
+        # e verrebbe altrimenti data per fatta e poi scartata dalle metriche
+        if k in _chiavi_attuali and not d.get("errore") and pd.notna(d.get("score")):
             fatti[k] = d
     n_err_prec = len(prec) - len(fatti)
     print(f"Riprendo: {len(fatti)} casi già completati" +
@@ -692,8 +696,13 @@ d = df[df["errore"].fillna("").astype(str).str.len() == 0].dropna(subset=["score
 y = d["etichetta"].astype(int).values
 s = d["score"].values
 
+_esclusi = len(df) - len(d)
+if _esclusi:
+    print(f"ATTENZIONE: {_esclusi} casi esclusi (errore o punteggio mancante).\n")
+
 if len(np.unique(y)) < 2:
     print("Servono entrambi i gruppi (PDAC e controlli) per calcolare l'AUROC.")
+    print("(se ti aspettavi entrambi, guarda la colonna 'errore' del CSV)")
 else:
     auroc = roc_auc_score(y, s)
 
@@ -710,10 +719,6 @@ else:
     print(f"  AUROC = {auroc:.3f}   (IC 95%: {lo:.3f} – {hi:.3f})")
     print("=" * 62)
     print(f"  casi: {int((y==1).sum())} PDAC / {int((y==0).sum())} controlli")
-    _esclusi = len(df) - len(d)
-    if _esclusi:
-        print(f"  ATTENZIONE: {_esclusi} casi esclusi (errore o punteggio mancante), "
-              f"NON conteggiati sopra")
     print(f"  punteggio mediano  PDAC : {np.median(s[y==1]):.3f}")
     print(f"  punteggio mediano  sani : {np.median(s[y==0]):.3f}")
 
