@@ -11,17 +11,37 @@ segmentazioni. Pensato per essere eseguito in Cursor/VSCode (estensione Jupyter)
 
 ---
 
-## Contenuto del repo
+Il repo contiene **due parti indipendenti**, ognuna con il proprio ambiente Python:
+
+| Parte | Cartella | A cosa serve |
+|---|---|---|
+| **1. Download del dataset** | radice del repo | scaricare a percentuale i casi PANORAMA da Zenodo e generare il report Excel |
+| **2. Inferenza PDAC** | [`baseline_pdac/`](baseline_pdac/) | far girare l'algoritmo baseline PANORAMA su nuovi esami TC e calcolare AUROC / AP |
+
+> ⚠️ **Le due parti usano ambienti Python DIVERSI e incompatibili tra loro**
+> (`.venv` per il download, `.venv-nnunet` per l'inferenza): nnU-Net richiede `numpy<2`
+> su macOS Intel, il notebook di download usa numpy 2.x. Non mescolarli.
+
+### Parte 1 — download del dataset (radice)
 | File | Cosa è |
 |---|---|
 | `panorama_download.ipynb` | **Notebook principale** (apri questo e fai Run All) |
 | `build_notebook.py` | genera il notebook (opzionale) |
-| `requirements.txt` | dipendenze Python (richiede **Python 3.12.13**, fissato in `.python-version`) |
+| `requirements.txt` | dipendenze (richiede **Python 3.12.13**, fissato in `.python-version`) |
 | `.vscode/settings.json` | interprete = `./.venv` |
 | `HANDOFF.md` | documento di stato dettagliato del progetto |
 
-Cartelle ignorate da git (vedi `.gitignore`): `.venv/`, `imagesTr/`, `labelsTr/`, `cache/`,
-`*.xlsx`, e i dataset Erasme separati.
+### Parte 2 — inferenza PDAC ([`baseline_pdac/`](baseline_pdac/))
+| File | Cosa è |
+|---|---|
+| `baseline_pdac/README.md` | **panoramica della cartella — parti da qui** |
+| `baseline_pdac/SETUP_GUIDE.md` | installazione passo passo (macOS Intel e Linux GPU) |
+| `baseline_pdac/panorama_baseline_inference.ipynb` | notebook di inferenza |
+| `baseline_pdac/requirements-*.txt` | dipendenze, una per piattaforma |
+
+Cartelle ignorate da git (vedi `.gitignore`), da ricreare/riscaricare in locale:
+`.venv/`, `.venv-nnunet/`, `imagesTr/`, `labelsTr/`, `cache/`, `*.xlsx`, `articles/`,
+`baseline_pdac/models/` (pesi da Zenodo, ~1,8 GB) e i dataset Erasme separati.
 
 ---
 

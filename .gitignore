@@ -1,8 +1,15 @@
 # === Ambiente Python (NON portabile tra OS: ricrearlo da requirements.txt) ===
 .venv/
+.venv-nnunet/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# === Pesi dei modelli e risultati (grandi; si riscaricano da Zenodo) ===
+baseline_pdac/models/
+baseline_pdac/risultati/
+*.pth
+*.npz
 
 # === Dati PANORAMA (grandi + licenza CC BY-NC: NON pubblicare) ===
 imagesTr/
@@ -13,6 +20,12 @@ cache/
 # === Dataset Erasme (separati, non parte di questo progetto) ===
 dataset_NIfTI_ERASME_PDAC/
 dataset_NIfTI_ERASME_health/
+
+# === Articoli scientifici (copyright dell'editore: NON pubblicare) ===
+articles/
+
+# === File temporanei di Office ===
+~$*
 
 # === Sistema ===
 .DS_Store

@@ -1,0 +1,32 @@
+# Ambiente per macOS Intel (x86_64) — SOLO CPU, per sviluppo e test
+#
+# VINCOLO DA RISPETTARE:
+#   su Mac Intel l'ultima versione di PyTorch disponibile è 2.2.2,
+#   e PyTorch < 2.3 NON funziona con NumPy >= 2.
+#   Quindi numpy, scipy, tifffile e imagecodecs vanno tenuti a versioni
+#   compatibili con numpy 1.x. Sono tutte pinnate qui sotto.
+#
+# Installa TUTTO IN UN SOLO COMANDO (altrimenti pip aggiorna numpy e rompe torch):
+#   pip install -r requirements-macos-intel.txt
+
+numpy==1.26.4
+torch==2.2.2
+scipy==1.13.1
+tifffile==2024.8.30
+imagecodecs==2024.6.1
+
+nnunetv2==2.5.1
+
+# Versioni fissate perche' determinano direttamente i risultati:
+# report-guided-annotation stabilisce come si estraggono le lesioni candidate
+# (e quindi il punteggio del paziente), picai_eval come si calcolano AP e AUROC.
+report-guided-annotation==0.3.4
+picai_eval==1.4.13
+
+SimpleITK
+nibabel
+pandas
+openpyxl
+scikit-learn
+matplotlib
+ipykernel
