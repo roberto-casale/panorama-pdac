@@ -32,3 +32,8 @@ articles/
 # === Sistema ===
 .DS_Store
 ._*
+
+# risultati di qualsiasi coorte (schema risultati_{COORTE})
+baseline_pdac/risultati_*/
+pandx_liu/risultati_*/
+dati_*/
