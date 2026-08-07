@@ -14,6 +14,8 @@ su un altro computer (per esempio il Linux con GPU) e funziona senza modifiche.
 | File / cartella | Cosa è |
 |---|---|
 | `panorama_baseline_inference.ipynb` | **Il notebook principale** — apri questo |
+| `panorama_baseline_inference_v2_plus_segmentation.ipynb` | come sopra, **+ salva la segmentazione a 7 classi** |
+| `panorama_baseline_inference_v3_seg_plus_embeddings.ipynb` | come la v2, **+ estrae l'embedding del bottleneck** |
 | `SETUP_GUIDE.md` | installazione passo passo (macOS Intel e Linux GPU) |
 | `requirements-macos-intel.txt` | dipendenze per Mac Intel (CPU) |
 | `requirements-linux-cuda.txt` | dipendenze per Linux con GPU |
@@ -73,3 +75,51 @@ La pipeline è stata eseguita davvero su casi PANORAMA reali:
 
 ⚠️ Strumento di **ricerca**, non un dispositivo medico approvato. Non usare per
 decisioni cliniche su pazienti reali.
+
+---
+
+## Le tre versioni del notebook
+
+Le versioni v2 e v3 **aggiungono** output senza toccare il codice originale: punteggio,
+mappa di detection, AUROC e AP escono dallo stesso identico codice della v1.
+
+| | Punteggio + AUROC/AP | Segmentazione 7 classi | Embedding 320-d |
+|---|---|---|---|
+| `..._inference.ipynb` (v1) | sì | — | — |
+| `..._v2_plus_segmentation.ipynb` | sì | sì | — |
+| `..._v3_seg_plus_embeddings.ipynb` | sì | sì | sì |
+
+**Come fanno a non cambiare i risultati.** La v2 avvolge `predict_single_npy_array` con una
+funzione che chiama il metodo originale e ne restituisce l'uscita immutata, mettendo da parte una
+copia della segmentazione. La v3 aggiunge due *forward hook*, che sono in sola lettura: osservano i
+tensori mentre passano senza modificarli. In entrambi i casi `elabora_caso` viene eseguita
+invariata.
+
+**Verificato** su un caso PDAC e un controllo, con tutte e 5 le fold: punteggi identici a 10
+decimali, `n_candidati` e `volume_lesione_voxel` identici, AUROC e AP identiche, e mappe di
+detection identiche **voxel per voxel**.
+
+### Cosa producono in più
+
+**v2** — `risultati/segmentazioni/<gruppo>/<caso>.nii.gz`, l'argmax grezzo dello stadio 2
+(0 sfondo, 1 lesione PDAC, 2 vene, 3 arterie, 4 parenchima, 5 dotto pancreatico, 6 coledoco),
+reincollato alle dimensioni della TC. Nessun post-processing: quel filtro appartiene alla mappa di
+detection, non alla segmentazione.
+
+**v3** — due CSV in formato lungo, una riga per `(paziente, fold)` e 320 colonne `emb_000…emb_319`:
+
+- `embedding_media_semplice.csv` — finestre pesate tutte uguali (descrive l'intera scatola)
+- `embedding_media_pesata.csv` — finestre pesate per probabilità di tumore (descrive la lesione)
+
+più `rapporto_rumore_segnale_*.csv`, che confronta la variabilità fra fold con quella fra pazienti.
+
+### Avvertenze
+
+- **`RESUME = True` salta i casi già elaborati**, che quindi non producono né segmentazioni né
+  embedding. Per generarle su tutta la coorte usa `RESUME = False` o una `OUTPUT_DIR` nuova.
+- **Non impostare `nnUNet_compile`**: `torch.compile` può saltare i forward hook. La v3 si ferma
+  con un errore esplicito se la trova attiva.
+- **File `._*`**: copiando dati da macOS si creano file nascosti che il ciclo raccoglie come se
+  fossero esami e che finiscono in errore. Vanno rimossi prima del lotto.
+- L'embedding descrive **il bounding box attorno al pancreas**, non il pancreas: il ritaglio è
+  allargato di 100 × 50 × 15 mm per lato.
